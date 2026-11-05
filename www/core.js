@@ -50,13 +50,14 @@
       if (startBlock < 0) startBlock = 0;
     }
     const out = [];
+    const chapters = [];                  // 장 시작 위치(문단 번호)와 제목
     let skipTitle = false;
     for (let i = startBlock; i < paras.length; i++) {
       const p = paras[i];
-      if (p.chapterHead) { skipTitle = true; if (p.lines.length > 1) skipTitle = false; continue; }
+      if (p.chapterHead) { chapters.push({ para: out.length, label: p.text, title: '' }); skipTitle = true; if (p.lines.length > 1) skipTitle = false; continue; }
       if (skipTitle) {                    // 챕터 제목(짧은 줄) 건너뛰기
         skipTitle = false;
-        if (p.text.length < 80 && !/[.!?]["”’]?$/.test(p.text)) continue;
+        if (p.text.length < 80 && !/[.!?]["”’]?$/.test(p.text)) { if (chapters.length) chapters[chapters.length - 1].title = p.text.replace(/\.$/, ''); continue; }
       }
       let txt = p.text.replace(/\[Illustration[^\]]*\]/gi, '').replace(/_/g, '').replace(/\s+/g, ' ').trim();
       if (!txt) continue;
@@ -65,7 +66,7 @@
       if (/^(Produced by|Transcriber)/i.test(txt)) continue;
       out.push(txt);
     }
-    return { paragraphs: out, meta };
+    return { paragraphs: out, meta, chapters };
   }
 
   function wordCount(s) { return (s.match(/[A-Za-z]+/g) || []).length; }
@@ -134,9 +135,22 @@
   }
 
   function parseBook(raw) {
-    const { paragraphs, meta } = extractParagraphs(raw);
-    const sentences = splitSentences(paragraphs).map(s => s.text);
-    return { meta, paragraphs, sentences };
+    const { paragraphs, meta, chapters: chs } = extractParagraphs(raw);
+    const sp = splitSentences(paragraphs);
+    const sentences = sp.map(s => s.text);
+    // 장 목록: 각 장이 시작하는 문장 번호(0부터)
+    const chapters = [];
+    (chs || []).forEach((c, k) => {
+      const start = sp.findIndex(x => x.para >= c.para);
+      if (start < 0) return;
+      if (chapters.length && chapters[chapters.length - 1].start === start) return;
+      let ti = (c.title || String(c.label || '').replace(/^\s*chapter\s+[A-Za-z0-9]+\.?\s*/i, '')).trim();
+      if (ti && ti === ti.toUpperCase()) ti = ti.toLowerCase().replace(/(^|[\s(-])([a-z])/g, (m, a, b) => a + b.toUpperCase()).replace(/([’'])S\b/g, '$1s').replace(/\b(Of|The|A|An|In|At|To|And|For|On)\b(?!$)/g, w => w.toLowerCase()).replace(/^./, x => x.toUpperCase());
+      chapters.push({ n: chapters.length + 1, title: ti, start });
+    });
+    if (!chapters.length || chapters[0].start > 0) chapters.unshift({ n: 0, title: '', start: 0 });
+    chapters.forEach((c, k) => { c.n = k + 1; c.end = k + 1 < chapters.length ? chapters[k + 1].start : sentences.length; });
+    return { meta, paragraphs, sentences, chapters };
   }
 
   const api = { parseBook, extractParagraphs, splitSentences, tokenize, wordKey, hashSentence, normSentence };
