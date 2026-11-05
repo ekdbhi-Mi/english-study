@@ -1,0 +1,6 @@
+{
+  "appId": "com.estudy.fivesentences",
+  "appName": "하루 5문장",
+  "webDir": "www",
+  "server": { "androidScheme": "https" }
+}
