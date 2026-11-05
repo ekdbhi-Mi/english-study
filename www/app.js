@@ -448,7 +448,9 @@ function viewSettings() {
   <div class="card"><h3>${hicon('spark')}분석 채우기</h3>
     <div class="muted">앱에 없는 문장은 아래 둘 중 하나로 분석을 채워요.</div><hr>
     <b>방법 1. 분석 팩 불러오기</b><div class="muted">클로드가 만들어 준 .json 파일을 불러와요. (API 키 필요 없음) 같은 문장은 덮어쓰고, 새 문장만 추가돼요.</div>
-    <label class="btn sm ghost" style="margin-top:8px">${ic('upload')} 분석 팩 파일 선택<input type="file" id="packfile" accept=".json,application/json" multiple hidden></label>
+    <div class="muted" style="margin-top:6px;font-size:12px">앱 버전: ${APP_VER}</div>
+    <label class="btn sm ghost" style="margin-top:8px">${ic('upload')} 분석 팩 파일 선택<input type="file" id="packfile" multiple hidden></label>
+    <div class="muted" style="margin-top:8px;font-size:12px"><b>불러오기 기록</b><br><span id="implog">${implogHTML()}</span></div>
     <hr>
     <b>방법 2. 앱이 직접 분석하기</b><div class="muted">Claude API 키를 넣으면 그날 문장을 앱이 바로 분석해요. 키는 이 기기에만 저장돼요. 사용한 만큼 요금이 나가요.</div>
     <input type="password" id="apikey" placeholder="sk-ant-..." value="${esc(st.apiKey)}" style="margin:8px 0"><input type="text" id="model" value="${esc(st.model)}"></div>
@@ -674,7 +676,7 @@ document.addEventListener('change', async ev => {
   if (t.id === 'check' || (t.dataset && t.dataset.act === 'check')) {
     const b = curBook(); b.draft.checks[+t.dataset.i] = t.checked; save(); render();
   } else if (t.id === 'bookfile' && t.files[0]) addBook(t.files[0]);
-  else if (t.id === 'packfile' && t.files.length) { const fs = [...t.files]; t.value = ''; importPacks(fs); }
+  else if (t.id === 'packfile' && t.files.length) { const fs = [...t.files]; logImport('선택됨 ' + fs.map(f => f.name + '(' + f.size + 'B)').join(', ')); t.value = ''; importPacks(fs); }
   else if (t.id === 'restorefile' && t.files[0]) restore(t.files[0]);
   else if (['nOn', 'nTime', 'apikey', 'model'].includes(t.id)) { readSettings(); save(); if (t.id === 'nOn' || t.id === 'nTime') applyReminder(); }
 });
@@ -775,6 +777,12 @@ function chapterDelete(id, n) {
   chapterSents(id, n).forEach(i => { const h = C.hashSentence(p.sentences[i]); if (A[h]) { delete A[h]; k++; } });
   saveAnalysis(); return k;
 }
+const APP_VER = '2026-11-06 · 분석팩 불러오기 v4';
+function logImport(msg) {
+  try { const L = JSON.parse(localStorage.getItem('estudy_implog') || '[]'); L.unshift(new Date().toTimeString().slice(0, 8) + ' ' + msg); localStorage.setItem('estudy_implog', JSON.stringify(L.slice(0, 6))); } catch (e) {}
+  const el = document.getElementById('implog'); if (el) el.innerHTML = implogHTML();
+}
+function implogHTML() { try { return JSON.parse(localStorage.getItem('estudy_implog') || '[]').map(esc).join('<br>') || '아직 기록이 없어요'; } catch (e) { return ''; } }
 /* 구글 드라이브 같은 클라우드 파일은 처음엔 내용이 덜 내려와 있을 수 있어서, 비었거나 중간에 끊겨 있으면 잠깐 쉬었다가 다시 읽어요 */
 function readFileText(f) {
   return new Promise((res, rej) => {
@@ -804,14 +812,15 @@ async function readPackFile(f) {
 }
 async function importPacks(files) {
   let total = 0, ok = 0; const bad = [];
-  toast('분석 팩을 불러오는 중…');
+  toast('분석 팩을 불러오는 중…'); logImport('불러오기 시작 (' + files.length + '개)');
   for (const f of files) {
     try {
       const j = await readPackFile(f);
       let n = 0; for (const k in j.items) { A[k] = j.items[k]; n++; }
       total += n; ok++;
-    } catch (e) { bad.push(f.name + ' (' + (e && e.message || e) + ')'); }
+    } catch (e) { bad.push(f.name + ' (' + (e && e.message || e) + ')'); logImport('실패 ' + f.name + ': ' + (e && e.message || e)); }
   }
+  logImport('끝: 성공 ' + ok + '개, ' + total + '문장');
   if (ok) { clearTimeout(saveAT); await kvSet('analysis', A); }
   render();
   if (bad.length) toast((ok ? ok + '개 파일 ' + total + '문장 불러옴 · ' : '') + '읽지 못한 파일: ' + bad.join(', '));
@@ -842,7 +851,8 @@ async function init() {
   await render();
   checkReminder();
   setInterval(checkReminder, 30000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminder(); render(); } });
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('label')) window.__pickAt = Date.now(); }, true);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminder(); if (!window.__pickAt || Date.now() - window.__pickAt > 120000) render(); } });
 }
 window.__estudy = { get S() { return S; }, C, render, completeToday };
 init();
