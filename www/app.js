@@ -450,7 +450,7 @@ function viewSettings() {
     <b>방법 1. 분석 팩 불러오기</b><div class="muted">클로드가 만들어 준 .json 파일을 불러와요. (API 키 필요 없음) 같은 문장은 덮어쓰고, 새 문장만 추가돼요.</div>
     <div class="muted" style="margin-top:6px;font-size:12px">앱 버전: ${APP_VER}</div>
     <label class="btn sm ghost" style="margin-top:8px">${ic('upload')} 분석 팩 파일 선택<input type="file" id="packfile" multiple hidden></label>
-    <div class="muted" style="margin-top:8px;font-size:12px"><b>불러오기 기록</b><br><span id="implog">${implogHTML()}</span></div>
+    <details class="muted" style="margin-top:8px;font-size:12px"><summary style="cursor:pointer"><b>불러오기 기록</b></summary><div style="margin-top:4px"><span id="implog">${implogHTML()}</span></div></details>
     <hr>
     <b>방법 2. 앱이 직접 분석하기</b><div class="muted">Claude API 키를 넣으면 그날 문장을 앱이 바로 분석해요. 키는 이 기기에만 저장돼요. 사용한 만큼 요금이 나가요.</div>
     <input type="password" id="apikey" placeholder="sk-ant-..." value="${esc(st.apiKey)}" style="margin:8px 0"><input type="text" id="model" value="${esc(st.model)}"></div>
@@ -777,7 +777,7 @@ function chapterDelete(id, n) {
   chapterSents(id, n).forEach(i => { const h = C.hashSentence(p.sentences[i]); if (A[h]) { delete A[h]; k++; } });
   saveAnalysis(); return k;
 }
-const APP_VER = '2026-11-06 · 분석팩 불러오기 v4';
+const APP_VER = '2026-11-06 · 분석팩 불러오기 v5';
 function logImport(msg) {
   try { const L = JSON.parse(localStorage.getItem('estudy_implog') || '[]'); L.unshift(new Date().toTimeString().slice(0, 8) + ' ' + msg); localStorage.setItem('estudy_implog', JSON.stringify(L.slice(0, 6))); } catch (e) {}
   const el = document.getElementById('implog'); if (el) el.innerHTML = implogHTML();
