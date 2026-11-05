@@ -12,6 +12,7 @@ const ROLE = {
 
 /* ---------- 아이콘 (선 아이콘 · 인포그래픽 스타일) ---------- */
 const IC = {
+  next: '<path d="M9 6l6 6-6 6"/>',
   book: '<path d="M12 6.5C10.5 5 8 4.5 4 4.5v13c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-13c-4 0-6.5.5-8 2z"/><path d="M12 6.5v13"/>',
   today: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>',
   log: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
@@ -239,7 +240,7 @@ function viewToday() {
   let h = '';
   const doneN = Object.keys(b.days).length;
   const pct = Math.min(100, Math.round(doneN * PER / Math.max(1, all.length) * 100));
-  h += `<div class="card hero"><div class="row" style="flex-wrap:nowrap;gap:16px"><div class="ringwrap">${ring(pct, 92, 9, '#fff', 'rgba(255,255,255,.25)')}<div class="pc"><div>${pct}%<small>읽은 양</small></div></div></div>
+  h += `<div class="card hero"><div class="row" style="flex-wrap:nowrap;gap:16px"><div class="ringwrap">${ring(pct, 92, 9, 'var(--brand-d)', 'rgba(255,255,255,.6)')}<div class="pc"><div>${pct}%<small>읽은 양</small></div></div></div>
     <div class="grow" style="min-width:0"><div class="ht">${finished ? '완독!' : 'Day ' + day}</div><div class="hs">${finished ? '' : mdLabel(today()) + ' · '}${esc(b.title)}</div></div></div>${weekStrip(b)}</div>`;
   h += statTiles(b, nDays);
   if (finished) {
@@ -365,43 +366,80 @@ function firstGapDay(id) {
   for (let d = 1; d <= n; d++) if (lessonSentences(id, d).some(x => !getAnalysis(x))) return d;
   return 0;
 }
-function analysisCard() {
-  let h = `<div class="card"><h3>${hicon('chart')}분석 현황 (장별)</h3><div class="muted" style="margin-bottom:12px">책의 장(1장, 2장…)마다 분석이 얼마나 채워졌는지 보고, 장 단위로 내보내거나 지울 수 있어요.</div>`;
-  for (const id in S.books) {
-    const bk = S.books[id], p = PARSED[id];
-    if (!p) continue;
-    const cs = chapStats(id);
-    const have = cs.reduce((a, c) => a + c.have, 0), total = cs.reduce((a, c) => a + c.total, 0);
-    const pct = total ? Math.round(have / total * 100) : 0;
-    const gd = firstGapDay(id);
-    h += `<details class="bk" data-id="${esc(id)}" ${(id in openBks ? openBks[id] : id === S.activeBook) ? 'open' : ''}><summary style="margin:0"><span class="bh" style="margin:0;display:flex;align-items:center;gap:12px;flex:1">
-      <span class="bring">${ring(pct, 54, 6, 'var(--brand)', 'var(--line)')}<span>${pct}%</span></span>
-      <span style="min-width:0"><span class="bt">${esc(bk.title)}</span><br><span class="muted" style="font-weight:500">분석 ${have.toLocaleString()} / ${total.toLocaleString()}문장 · ${gd ? 'Day ' + gd + '부터 비어 있어요' : '모든 날이 채워졌어요'}</span></span></span></summary>
-      <div style="margin-top:8px">`;
-    cs.forEach(c => {
-      const pc = c.total ? Math.round(c.have / c.total * 100) : 0;
-      const st = c.have === 0 ? 'empty' : c.have >= c.total ? 'full' : 'part';
-      h += `<div class="chap ${st}"><div class="cn">${c.n}</div>
-        <div class="grow" style="min-width:0"><div class="ctitle">${c.n}장${c.title ? ' · ' + esc(c.title) : ''} ${st === 'full' ? '<span class="tag">완료</span>' : st === 'part' ? '<span class="tag warn">일부</span>' : ''}</div>
-        <div class="cmeta">${c.have}/${c.total}문장 · Day ${c.d1}~${c.d2}</div><div class="progress"><i style="width:${pc}%"></i></div></div>
-        <button class="ib" data-act="chExport" data-b="${esc(id)}" data-c="${c.n}" ${c.have ? '' : 'disabled'} aria-label="${c.n}장 분석 내보내기">${ic('download')}</button>
-        <button class="ib red" data-act="chDelAsk" data-b="${esc(id)}" data-c="${c.n}" ${c.have ? '' : 'disabled'} aria-label="${c.n}장 분석 지우기">${ic('trash')}</button></div>`;
-    });
-    h += `<div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="chExport" data-b="${esc(id)}" data-c="0">${ic('download')} 이 책 전체 내보내기</button></div></div></details>`;
+/* 책 한 권의 요약(목록용) */
+function bookSummary(id) {
+  const bk = S.books[id], p = PARSED[id];
+  if (!p) return null;
+  const cs = chapStats(id);
+  const have = cs.reduce((a, c) => a + c.have, 0), total = cs.reduce((a, c) => a + c.total, 0);
+  const pct = total ? Math.round(have / total * 100) : 0;
+  const n = Math.ceil((p.sentences.length - (bk.skip || 0)) / PER);
+  const full = cs.filter(c => c.total && c.have >= c.total).length;
+  return { bk, p, cs, have, total, pct, n, full, gd: firstGapDay(id) };
+}
+/* 내 책: 한 줄 요약 목록 (검색 + 정렬). 누르면 자세한 현황이 열려요 */
+let bookQ = '';
+function bookLastDay(id) { const d = Object.values(S.books[id].days || {}).map(x => x.date || '').sort(); return d.length ? d[d.length - 1] : ''; }
+function booksList() {
+  const sort = S.settings.bookSort || 'recent';
+  let ids = Object.keys(S.books);
+  const q = bookQ.trim().toLowerCase();
+  if (q) ids = ids.filter(id => S.books[id].title.toLowerCase().includes(q));
+  const sums = {}; ids.forEach(id => sums[id] = bookSummary(id));
+  const byName = (a, b) => S.books[a].title.localeCompare(S.books[b].title);
+  const key = {
+    recent: (a, b) => bookLastDay(b).localeCompare(bookLastDay(a)) || byName(a, b),
+    name: byName,
+    prog: (a, b) => ((sums[b] ? sums[b].pct : 0) - (sums[a] ? sums[a].pct : 0)) || byName(a, b)
+  }[sort];
+  ids.sort(key);
+  const ai = ids.indexOf(S.activeBook);           // 공부 중인 책은 항상 맨 위
+  if (ai > 0) { ids.splice(ai, 1); ids.unshift(S.activeBook); }
+  if (!ids.length) return `<div class="muted" style="padding:10px 2px">‘${esc(bookQ)}’에 맞는 책이 없어요.</div>`;
+  let h = '';
+  for (const id of ids) {
+    const m = sums[id];
+    if (!m) { h += `<div class="brow"><div class="grow"><b>${esc(S.books[id].title)}</b><div class="muted">불러오는 중…</div></div></div>`; continue; }
+    h += `<button class="brow" data-act="bookOpen" data-id="${esc(id)}">
+      <span class="bring sm">${ring(m.pct, 44, 5, 'var(--brand)', 'var(--line)')}<span>${m.pct}%</span></span>
+      <span class="grow" style="min-width:0;text-align:left"><span class="bt">${esc(m.bk.title)}</span>${id === S.activeBook ? ' <span class="tag">공부 중</span>' : ''}<br>
+      <span class="muted">${Object.keys(m.bk.days).length}/${m.n}일 공부 · 분석 ${m.full}/${m.cs.length}개 장 완료</span></span>
+      <span class="chev">${ic('next')}</span></button>`;
   }
-  return h + '</div>';
+  return h;
+}
+function booksCard() {
+  const sort = S.settings.bookSort || 'recent';
+  const opt = (k, t) => `<button class="${sort === k ? 'on' : ''}" data-act="bookSort" data-k="${k}">${t}</button>`;
+  return `<div class="card"><h3>${hicon('book')}내 책 <span class="muted" style="font-weight:500;font-size:13px">${Object.keys(S.books).length}권</span></h3>
+    <input type="search" id="bookq" placeholder="책 이름으로 찾기" value="${esc(bookQ)}" style="margin-bottom:8px">
+    <div class="seg" style="margin-bottom:10px">${opt('recent', '최근 공부순')}${opt('name', '이름순')}${opt('prog', '진행률순')}</div>
+    <div id="booklist">${booksList()}</div>
+    <div class="row" style="margin-top:10px"><button class="btn sm ghost" data-act="skipSet">본문 시작 위치 바꾸기</button><label class="btn sm ghost">${ic('add')} txt 책 추가<input type="file" id="bookfile" accept=".txt,text/plain" hidden></label></div></div>`;
+}
+/* 책 상세 현황(바닥 시트) */
+function bookSheet(id) {
+  const m = bookSummary(id); if (!m) return;
+  let h = `<div class="sheet"><div class="bar"><b style="font-size:17px">${esc(m.bk.title)}</b><button class="btn sm ghost" data-act="closeOv">닫기</button></div>
+    <div class="card"><div class="bh" style="margin:0"><span class="bring">${ring(m.pct, 54, 6, 'var(--brand)', 'var(--line)')}<span>${m.pct}%</span></span>
+      <span style="min-width:0"><b>분석 ${m.have.toLocaleString()} / ${m.total.toLocaleString()}문장</b><br><span class="muted">${m.gd ? 'Day ' + m.gd + '부터 비어 있어요' : '모든 날이 채워졌어요'} · ${Object.keys(m.bk.days).length}/${m.n}일 공부</span></span></div>
+      <div class="row" style="margin-top:12px">${id === S.activeBook ? '' : `<button class="btn sm" data-act="pickBook" data-id="${esc(id)}">이 책으로 공부</button>`}
+      <button class="btn sm ghost" data-act="chExport" data-b="${esc(id)}" data-c="0">${ic('download')} 전체 내보내기</button></div></div>
+    <div class="card"><h3>${hicon('chart')}장별 현황</h3>`;
+  m.cs.forEach(c => {
+    const pc = c.total ? Math.round(c.have / c.total * 100) : 0;
+    const st = c.have === 0 ? 'empty' : c.have >= c.total ? 'full' : 'part';
+    h += `<div class="chap ${st}"><div class="cn">${c.n}</div>
+      <div class="grow" style="min-width:0"><div class="ctitle">${c.n}장${c.title ? ' · ' + esc(c.title) : ''} ${st === 'full' ? '<span class="tag">완료</span>' : st === 'part' ? '<span class="tag warn">일부</span>' : ''}</div>
+      <div class="cmeta">${c.have}/${c.total}문장 · Day ${c.d1}~${c.d2}</div><div class="progress"><i style="width:${pc}%"></i></div></div>
+      <button class="ib" data-act="chExport" data-b="${esc(id)}" data-c="${c.n}" ${c.have ? '' : 'disabled'} aria-label="${c.n}장 분석 내보내기">${ic('download')}</button>
+      <button class="ib red" data-act="chDelAsk" data-b="${esc(id)}" data-c="${c.n}" ${c.have ? '' : 'disabled'} aria-label="${c.n}장 분석 지우기">${ic('trash')}</button></div>`;
+  });
+  openOverlay(h + '</div></div>');
 }
 function viewSettings() {
   const st = S.settings;
-  let h = `<div class="card"><h3>${hicon('book')}내 책</h3>`;
-  for (const id in S.books) {
-    const b = S.books[id], p = PARSED[id];
-    const n = p ? Math.ceil((p.sentences.length - (b.skip || 0)) / PER) : '?';
-    h += `<div class="row" style="margin-bottom:10px"><div class="grow"><b>${esc(b.title)}</b>${id === S.activeBook ? ' <span class="tag">공부 중</span>' : ''}<div class="muted">${Object.keys(b.days).length}일 완료 / 전체 ${n}일${p ? ' · ' + p.chapters.length + '개 장' : ''}</div></div>
-    ${id === S.activeBook ? '' : `<button class="btn sm" data-act="pickBook" data-id="${esc(id)}">이 책으로 공부</button>`}</div>`;
-  }
-  h += `<div class="row"><button class="btn sm ghost" data-act="skipSet">본문 시작 위치 바꾸기</button><label class="btn sm ghost">${ic('add')} txt 책 추가<input type="file" id="bookfile" accept=".txt,text/plain" hidden></label></div></div>
-  ${analysisCard()}
+  let h = booksCard() + `
   <div class="card"><h3>${hicon('bell')}공부 알림</h3>
     <label class="row"><input type="checkbox" id="nOn" ${st.notifyOn ? 'checked' : ''} style="width:22px;height:22px;accent-color:var(--brand)"> 매일 알림 받기</label>
     <div class="row" style="margin:10px 0"><div class="grow">알림 시간</div><input type="time" id="nTime" value="${esc(st.notifyTime)}" style="width:140px"></div>
@@ -618,7 +656,9 @@ document.addEventListener('click', async ev => {
   else if (a === 'vlearn') { const w = S.words[el.dataset.k]; w.state = 'learned'; w.learned = today(); save(); render(); toast('졸업! 축하해요'); }
   else if (a === 'vrelearn') { S.words[el.dataset.k].state = 'unknown'; save(); render(); }
   else if (a === 'vedit') { const w = S.words[el.dataset.k]; const m = prompt(w.w + ' 의 뜻', w.meaning || ''); if (m !== null) { w.meaning = m.trim(); save(); render(); } }
-  else if (a === 'pickBook') { S.activeBook = el.dataset.id; await ensureParsed(S.activeBook); save(); tab = 'today'; render(); }
+  else if (a === 'bookOpen') bookSheet(el.dataset.id);
+  else if (a === 'bookSort') { S.settings.bookSort = el.dataset.k; save(); render(); }
+  else if (a === 'pickBook') { S.activeBook = el.dataset.id; await ensureParsed(S.activeBook); save(); closeOverlay(); tab = 'today'; render(); }
   else if (a === 'skipSet') skipDialog();
   else if (a === 'skipOk') { const n = Math.max(0, +$('#skipn').value || 0); b.skip = n; b.days = {}; b.draft = null; S.records[S.activeBook] = {}; b.startDate = null; save(); closeOverlay(); render(); toast('시작 위치를 바꿨어요'); }
   else if (a === 'notifyAllow') { readSettings(); save(); applyReminder(); }
@@ -626,7 +666,7 @@ document.addEventListener('click', async ev => {
   else if (a === 'exportHtml' || a === 'exportTxt') { const f = exportData(a === 'exportHtml' ? 'html' : 'txt'); download(f.name, f.mime, f.data); }
   else if (a === 'chExport') chapterExport(el.dataset.b, +el.dataset.c);
   else if (a === 'chDelAsk') chapterDeleteAsk(el.dataset.b, +el.dataset.c);
-  else if (a === 'chDelOk') { const n = chapterDelete(el.dataset.b, +el.dataset.c); closeOverlay(); render(); toast(n + '문장의 분석을 지웠어요'); }
+  else if (a === 'chDelOk') { const n = chapterDelete(el.dataset.b, +el.dataset.c); render(); bookSheet(el.dataset.b); toast(n + '문장의 분석을 지웠어요'); }
   else if (a === 'backup') { download('영어공부_백업_' + today() + '.json', 'application/json', JSON.stringify({ S, A })); }
 });
 document.addEventListener('change', async ev => {
@@ -642,6 +682,7 @@ document.addEventListener('toggle', ev => { const d = ev.target; if (d && d.clas
 document.addEventListener('input', ev => {
   const t = ev.target;
   if (t.id === 'vq') { vocabQ = t.value; const pos = t.selectionStart; render().then(() => { const n = $('#vq'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); }
+  if (t.id === 'bookq') { bookQ = t.value; const L = $('#booklist'); if (L) L.innerHTML = booksList(); }
   if (t.id === 'logq') { logQ = t.value; const pos = t.selectionStart; render().then(() => { const n = $('#logq'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); }
 });
 function readSettings() {
@@ -727,7 +768,7 @@ function chapterDeleteAsk(id, n) {
   const p = PARSED[id], c = p && p.chapters[n - 1]; if (!c) return;
   openOverlay(`<div class="sheet"><div class="bar"><b>${n}장 분석 지우기</b><button class="btn sm ghost" data-act="closeOv">닫기</button></div>
     <div class="banner warn">${ic('alert')}<div><b>${esc(S.books[id].title)} · ${n}장${c.title ? ' (' + esc(c.title) + ')' : ''}</b>의 분석을 모두 지워요.<br>지운 뒤에는 분석 팩을 다시 불러와야 볼 수 있어요. 이미 완료한 날의 기록은 그대로 남아요.</div></div>
-    <div class="row"><button class="btn bad grow" data-act="chDelOk" data-b="${esc(id)}" data-c="${n}">${ic('trash')} 지우기</button><button class="btn ghost grow" data-act="closeOv">취소</button></div></div>`);
+    <div class="row"><button class="btn bad grow" data-act="chDelOk" data-b="${esc(id)}" data-c="${n}">${ic('trash')} 지우기</button><button class="btn ghost grow" data-act="bookOpen" data-id="${esc(id)}">취소</button></div></div>`);
 }
 function chapterDelete(id, n) {
   const p = PARSED[id]; let k = 0;
