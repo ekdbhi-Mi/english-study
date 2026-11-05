@@ -448,7 +448,7 @@ function viewSettings() {
   <div class="card"><h3>${hicon('spark')}분석 채우기</h3>
     <div class="muted">앱에 없는 문장은 아래 둘 중 하나로 분석을 채워요.</div><hr>
     <b>방법 1. 분석 팩 불러오기</b><div class="muted">클로드가 만들어 준 .json 파일을 불러와요. (API 키 필요 없음) 같은 문장은 덮어쓰고, 새 문장만 추가돼요.</div>
-    <label class="btn sm ghost" style="margin-top:8px">${ic('upload')} 분석 팩 파일 선택<input type="file" id="packfile" accept=".json,application/json" hidden></label>
+    <label class="btn sm ghost" style="margin-top:8px">${ic('upload')} 분석 팩 파일 선택<input type="file" id="packfile" accept=".json,application/json" multiple hidden></label>
     <hr>
     <b>방법 2. 앱이 직접 분석하기</b><div class="muted">Claude API 키를 넣으면 그날 문장을 앱이 바로 분석해요. 키는 이 기기에만 저장돼요. 사용한 만큼 요금이 나가요.</div>
     <input type="password" id="apikey" placeholder="sk-ant-..." value="${esc(st.apiKey)}" style="margin:8px 0"><input type="text" id="model" value="${esc(st.model)}"></div>
@@ -674,7 +674,7 @@ document.addEventListener('change', async ev => {
   if (t.id === 'check' || (t.dataset && t.dataset.act === 'check')) {
     const b = curBook(); b.draft.checks[+t.dataset.i] = t.checked; save(); render();
   } else if (t.id === 'bookfile' && t.files[0]) addBook(t.files[0]);
-  else if (t.id === 'packfile' && t.files[0]) importPack(t.files[0]);
+  else if (t.id === 'packfile' && t.files.length) { const fs = [...t.files]; t.value = ''; importPacks(fs); }
   else if (t.id === 'restorefile' && t.files[0]) restore(t.files[0]);
   else if (['nOn', 'nTime', 'apikey', 'model'].includes(t.id)) { readSettings(); save(); if (t.id === 'nOn' || t.id === 'nTime') applyReminder(); }
 });
@@ -775,14 +775,47 @@ function chapterDelete(id, n) {
   chapterSents(id, n).forEach(i => { const h = C.hashSentence(p.sentences[i]); if (A[h]) { delete A[h]; k++; } });
   saveAnalysis(); return k;
 }
-async function importPack(file) {
-  try {
-    const j = JSON.parse(await file.text());
-    const items = j.items || {};
-    let n = 0;
-    for (const k in items) { A[k] = items[k]; n++; }
-    saveAnalysis(); toast(n + '문장의 분석을 불러왔어요'); render();
-  } catch (e) { toast('팩 파일을 읽지 못했어요: ' + e.message); }
+/* 구글 드라이브 같은 클라우드 파일은 처음엔 내용이 덜 내려와 있을 수 있어서, 비었거나 중간에 끊겨 있으면 잠깐 쉬었다가 다시 읽어요 */
+function readFileText(f) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result || ''));
+    r.onerror = () => rej(r.error || new Error('파일을 읽지 못했어요'));
+    r.readAsText(f);
+  });
+}
+async function readPackFile(f) {
+  let last = null;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const txt = await readFileText(f);
+      if (!txt.trim()) throw new Error('파일 내용이 아직 비어 있어요');
+      const j = JSON.parse(txt);
+      if (!j.items || typeof j.items !== 'object') throw new Error('분석 팩 형식이 아니에요');
+      if (j.count && Object.keys(j.items).length < j.count * 0.99) throw new Error('파일이 덜 내려왔어요');
+      return j;
+    } catch (e) {
+      last = e;
+      if (e && /형식이 아니에요/.test(e.message)) break;   // 진짜 다른 파일이면 다시 읽지 않아요
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+  throw last;
+}
+async function importPacks(files) {
+  let total = 0, ok = 0; const bad = [];
+  toast('분석 팩을 불러오는 중…');
+  for (const f of files) {
+    try {
+      const j = await readPackFile(f);
+      let n = 0; for (const k in j.items) { A[k] = j.items[k]; n++; }
+      total += n; ok++;
+    } catch (e) { bad.push(f.name + ' (' + (e && e.message || e) + ')'); }
+  }
+  if (ok) { clearTimeout(saveAT); await kvSet('analysis', A); }
+  render();
+  if (bad.length) toast((ok ? ok + '개 파일 ' + total + '문장 불러옴 · ' : '') + '읽지 못한 파일: ' + bad.join(', '));
+  else toast(ok + '개 파일, ' + total + '문장의 분석을 불러왔어요');
 }
 async function restore(file) {
   try {
