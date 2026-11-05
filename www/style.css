@@ -10,9 +10,9 @@
   --badbg:#3a1f22;--goodbg:#14322a;--warnbg:#3a2e14;--shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25)}
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;font-size:16px;line-height:1.55}
+html,body{margin:0;height:100%;max-width:100%;overflow-x:hidden;background:var(--bg);color:var(--ink);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;font-size:16px;line-height:1.55}
 svg.ic{width:1.15em;height:1.15em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.2em;flex:none}
-#app{max-width:760px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+#app{width:100%;max-width:760px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
 
 /* 머리말 */
 header#top{position:sticky;top:0;z-index:5;color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;display:flex;align-items:center;gap:10px;
@@ -68,7 +68,7 @@ label.btn{display:inline-flex;align-items:center;gap:6px}
 .week i.td b{box-shadow:0 0 0 3px rgba(255,255,255,.35)}
 
 /* 통계 타일 */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 8px;text-align:center;box-shadow:var(--shadow)}
 .stat .si{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;margin:0 auto 6px;background:var(--c1,var(--brand2));color:var(--c2,var(--brand))}
 .stat .si svg{width:18px;height:18px}
@@ -112,21 +112,21 @@ details[open]>summary::after{transform:rotate(-135deg)}
 .progress{height:10px;background:var(--line);border-radius:8px;overflow:hidden}.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--good),#3ddc97);border-radius:8px}
 
 /* 달력 */
-.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .cal .h{text-align:center;font-size:12px;color:var(--sub);font-weight:700;padding-bottom:2px}
 .cal .h:first-child{color:var(--bad)}
-.cell{aspect-ratio:1/1.05;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:4px;font-size:12px;text-align:center;display:flex;flex-direction:column;justify-content:space-between;min-height:54px}
+.cell{min-width:0;overflow:hidden;height:58px;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:4px;font-size:12px;text-align:center;display:flex;flex-direction:column;justify-content:space-between}
 .cell .dn{color:var(--sub);text-align:left;padding-left:2px;font-weight:600}
 .cell .mk{display:grid;place-items:center;height:20px}
 .cell .mk svg{width:18px;height:18px}
-.cell .dd{font-size:10px;color:var(--sub)}
+.cell .dd{font-size:9.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cell.done{background:var(--goodbg);border-color:transparent}.cell.done .mk{color:var(--good)}.cell.done .dn{color:var(--good)}
 .cell.miss{background:var(--badbg);border-color:transparent}.cell.miss .mk{color:var(--bad)}
 .cell.today{border:2px solid var(--brand);box-shadow:0 0 0 3px var(--brand2)}.cell.today .mk{color:var(--brand)}
 .cell.none{background:transparent;border-color:transparent}
 .lg{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--sub)}
 .lg span{display:inline-flex;align-items:center;gap:5px}.lg i{width:12px;height:12px;border-radius:4px;display:inline-block}
-.daygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px}
+.daygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px}
 .daybox{border:1px solid var(--line);border-radius:12px;padding:7px 2px;text-align:center;font-size:12px;background:var(--card);position:relative;color:var(--sub);font-weight:600}
 .daybox svg{width:15px;height:15px;display:block;margin:0 auto 1px}
 .daybox.done{background:var(--goodbg);border-color:transparent;color:var(--good);font-weight:800}
@@ -188,3 +188,5 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
 .hero .week{margin-top:14px;position:relative;z-index:1}
 .week b svg{width:13px;height:13px;stroke-width:3}
 .stat.t2 b small{font-weight:600}
+
+main#view,.card{min-width:0}
