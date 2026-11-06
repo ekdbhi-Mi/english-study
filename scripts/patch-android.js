@@ -10,6 +10,10 @@ const perms = [
 let add = '';
 for (const q of perms) if (!x.includes(q)) add += `    <uses-permission android:name="${q}" />\n`;
 if (add) x = x.replace('</manifest>', add + '</manifest>');
+// 안드로이드 11 이상: 기기의 음성(TTS) 엔진을 찾을 수 있게 허용
+if (!x.includes('android.intent.action.TTS_SERVICE')) {
+  x = x.replace('</manifest>', '    <queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n</manifest>');
+}
 fs.writeFileSync(p, x);
 console.log('manifest patched:', add.trim() || '(이미 있음)');
 
