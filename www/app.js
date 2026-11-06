@@ -23,6 +23,8 @@ const IC = {
   target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
   alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17.3v.01"/>',
   speaker: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>',
+  stopbox: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>',
+  playtri: '<path d="M8 5.5v13l11-6.5z" fill="currentColor"/>',
   blocks: '<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/>',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2-.5-1 0-2 1-2H17a4 4 0 0 0 4-4c0-5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
@@ -175,6 +177,7 @@ async function render() {
   else if (tab === 'vocab') v.innerHTML = viewVocab();
   else v.innerHTML = viewSettings();
   if (tab === 'today') autoGenerate();
+  syncSpk();
 }
 
 /* ---------- 문장 카드 ---------- */
@@ -202,7 +205,7 @@ function sentenceCard(s, i, checked, readonly, snap) {
   const an = snap || getAnalysis(s);
   const missing = !an;
   let h = `<section class="card" data-i="${i}">
-    <div class="snum"><span class="nb"><i>${i + 1}</i>문장</span><button data-act="speak" data-i="${i}" aria-label="읽어주기">${ic('speaker')}</button></div>
+    <div class="snum"><span class="nb"><i>${i + 1}</i>문장</span><button data-act="speak" data-i="${i}" data-key="${esc(s)}" class="spk ${spkClass(s)}" aria-label="읽어주기">${spkIcon(s)}</button></div>
     <p class="en">${tokensHTML(s)}</p>`;
   if (an) h += analysisHTML(an);
   else h += `<div class="banner warn" style="font-size:14px">${ic('alert')}<div>이 문장의 분석이 아직 없어요. ${S.settings.apiKey ? (busy.gen ? '<span class="spin">●</span> 만드는 중…' : '<button class="btn sm" data-act="gen">분석 만들기</button>') : '설정에서 API 키를 넣거나, 클로드에게 분석 팩을 받아 불러오세요.'}</div></div>`;
@@ -634,7 +637,7 @@ function checkReminder() {
 document.addEventListener('click', async ev => {
   const el = ev.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act, b = curBook();
-  if (a === 'tab') { tab = el.dataset.t; closeOverlay(); render(); window.scrollTo(0, 0); }
+  if (a === 'tab') { stopSpeak(); tab = el.dataset.t; closeOverlay(); render(); window.scrollTo(0, 0); }
   else if (a === 'word') { openWord.si = +el.closest('.card').dataset.i; wordSheet(el.dataset.k, el.dataset.t); }
   else if (a === 'wset') {
     const key = openWord.key, st = el.dataset.s, m = $('#wm').value.trim();
@@ -644,7 +647,9 @@ document.addEventListener('click', async ev => {
   }
   else if (a === 'closeOv') closeOverlay();
   else if (a === 'speakWord') speak(openWord.tok);
-  else if (a === 'speak') speak(LESSON.sents[+el.dataset.i]);
+  else if (a === 'speak') speakSentenceTap(el.dataset.key || LESSON.sents[+el.dataset.i]);
+  else if (a === 'spkResume') { const t = TT.key; closeOverlay(); if (t) startSpeak(t, TT.pos); }
+  else if (a === 'spkRestart') { const t = TT.key; closeOverlay(); if (t) startSpeak(t, 0); }
   else if (a === 'allknown') {
     const s = LESSON.sents[+el.dataset.i];
     C.tokenize(s).forEach(t => { if (t.type === 'word' && !wstate(t.key)) setWord(t.key, t.text.toLowerCase(), 'known'); });
@@ -694,16 +699,77 @@ function readSettings() {
   if ($('#apikey')) st.apiKey = $('#apikey').value.trim();
   if ($('#model') && $('#model').value.trim()) st.model = $('#model').value.trim();
 }
-function speak(text) {
-  // 안드로이드 앱(APK): 기기 음성 엔진 플러그인 사용 (웹뷰 기본 기능은 소리가 안 나는 경우가 많아요)
-  const TTS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
-  if (TTS) {
-    TTS.stop().catch(() => {}).then(() => TTS.speak({ text: text, lang: 'en-US', rate: 0.85, pitch: 1.0, volume: 1.0, category: 'ambient' }))
-      .catch(() => toast('읽어주기를 쓸 수 없어요. 폰 설정에서 음성 출력(TTS) 엔진을 확인해 주세요'));
+/* ---------- 읽어주기 (멈춤 / 이어서 / 처음부터) ---------- */
+// mode: 'idle' | 'playing' | 'paused'.  offset = 읽던 글자 위치(이어서 읽을 때 사용)
+const TT = { key: null, mode: 'idle', base: 0, pos: 0, run: 0 };
+const getTTS = () => window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
+function spkClass(t) { return TT.key === t && TT.mode !== 'idle' ? (TT.mode === 'playing' ? 'on' : 'paused') : ''; }
+function spkIcon(t) { return TT.key === t ? (TT.mode === 'playing' ? ic('stopbox') : TT.mode === 'paused' ? ic('playtri') : ic('speaker')) : ic('speaker'); }
+function syncSpk() {
+  document.querySelectorAll('button[data-act="speak"]').forEach(b => {
+    const t = b.dataset.key;
+    b.className = 'spk ' + spkClass(t);
+    b.innerHTML = spkIcon(t);
+    b.setAttribute('aria-label', TT.key === t && TT.mode === 'playing' ? '멈추기' : '읽어주기');
+  });
+}
+function haltEngine() {
+  const T = getTTS();
+  try { if (T) T.stop().catch(() => {}); } catch (e) {}
+  try { speechSynthesis.cancel(); } catch (e) {}
+}
+let tts_listener = null;
+function ensureRangeListener() {
+  const T = getTTS();
+  if (!T || tts_listener || !T.addListener) return;
+  tts_listener = true;
+  try { T.addListener('onRangeStart', info => { if (TT.mode === 'playing') TT.pos = TT.base + (info.start || 0); }); } catch (e) {}
+}
+// text 를 offset 글자부터 읽기 시작
+function startSpeak(text, offset) {
+  haltEngine();
+  const run = ++TT.run;
+  TT.key = text; TT.mode = 'playing'; TT.base = offset || 0; TT.pos = TT.base;
+  const part = text.slice(TT.base);
+  const done = () => { if (TT.run === run && TT.mode === 'playing') { TT.mode = 'idle'; TT.key = null; syncSpk(); } };
+  const fail = () => { if (TT.run === run) { TT.mode = 'idle'; TT.key = null; syncSpk(); toast('읽어주기를 쓸 수 없어요. 폰 설정에서 음성 출력(TTS) 엔진을 확인해 주세요'); } };
+  syncSpk();
+  const T = getTTS();
+  if (T) {
+    ensureRangeListener();
+    T.stop().catch(() => {}).then(() => { if (TT.run !== run) return; return T.speak({ text: part, lang: 'en-US', rate: 0.85, pitch: 1.0, volume: 1.0, category: 'ambient' }); })
+      .then(done).catch(fail);
     return;
   }
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = 0.85; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) { toast('이 기기는 읽어주기를 지원하지 않아요'); }
+  try {
+    const u = new SpeechSynthesisUtterance(part); u.lang = 'en-US'; u.rate = 0.85;
+    u.onboundary = e => { if (TT.run === run && TT.mode === 'playing') TT.pos = TT.base + (e.charIndex || 0); };
+    u.onend = done; u.onerror = () => { if (TT.run === run && TT.mode === 'playing') done(); };
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch (e) { fail(); }
 }
+// 멈춤: 읽던 위치는 기억해 둬요
+function pauseSpeak() {
+  if (TT.mode !== 'playing') return;
+  TT.run++; TT.mode = 'paused'; haltEngine(); syncSpk();
+}
+// 완전히 끝내기(기억도 지움)
+function resetSpeak() { TT.run++; TT.mode = 'idle'; TT.key = null; haltEngine(); syncSpk(); }
+function stopSpeak() { pauseSpeak(); }
+function speakSentenceTap(text) {
+  if (TT.key === text && TT.mode === 'playing') { pauseSpeak(); return; }
+  if (TT.key === text && TT.mode === 'paused' && TT.pos > 0) { spkChoiceSheet(text); return; }
+  startSpeak(text, 0);
+}
+function spkChoiceSheet(text) {
+  const rest = text.slice(TT.pos).trim();
+  const peek = rest.length > 40 ? rest.slice(0, 40) + '…' : rest;
+  openOverlay(`<div class="sheet"><div class="bar"><b>읽어주기</b><button class="btn sm ghost" data-act="closeOv">닫기</button></div>
+    <div class="muted" style="margin-bottom:10px">멈춘 곳: “${esc(peek)}”</div>
+    <div class="row"><button class="btn grow" data-act="spkResume">▶ 멈춘 곳부터</button><button class="btn ghost grow" data-act="spkRestart">↺ 처음부터</button></div></div>`);
+}
+// 단어 읽기: 멈춤 기억 없이 한 번 읽기
+function speak(text) { startSpeak(text, 0); }
 
 /* ---------- 완료 ---------- */
 function completeToday() {
@@ -784,7 +850,7 @@ function chapterDelete(id, n) {
   chapterSents(id, n).forEach(i => { const h = C.hashSentence(p.sentences[i]); if (A[h]) { delete A[h]; k++; } });
   saveAnalysis(); return k;
 }
-const APP_VER = '2026-11-06 · 분석팩 불러오기 · 음성 v6';
+const APP_VER = '2026-11-06 · 분석팩 불러오기 · 음성 v8';
 function logImport(msg) {
   try { const L = JSON.parse(localStorage.getItem('estudy_implog') || '[]'); L.unshift(new Date().toTimeString().slice(0, 8) + ' ' + msg); localStorage.setItem('estudy_implog', JSON.stringify(L.slice(0, 6))); } catch (e) {}
   const el = document.getElementById('implog'); if (el) el.innerHTML = implogHTML();
@@ -859,7 +925,7 @@ async function init() {
   checkReminder();
   setInterval(checkReminder, 30000);
   document.addEventListener('click', e => { if (e.target.closest && e.target.closest('label')) window.__pickAt = Date.now(); }, true);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminder(); if (!window.__pickAt || Date.now() - window.__pickAt > 120000) render(); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopSpeak(); if (!document.hidden) { checkReminder(); if (!window.__pickAt || Date.now() - window.__pickAt > 120000) render(); } });
 }
 window.__estudy = { get S() { return S; }, C, render, completeToday };
 init();

@@ -208,3 +208,7 @@ main#view,.card{min-width:0}
 .tag{white-space:nowrap}
 .sheet .bar .btn{flex:none;white-space:nowrap}
 .sheet .bar b{min-width:0}
+
+.snum button.spk.on{background:var(--brand-d);color:#fff}
+.snum button.spk.paused{background:#fff;color:var(--brand-d);box-shadow:0 0 0 2px var(--brand)}
+.snum button.spk svg{width:18px;height:18px}
