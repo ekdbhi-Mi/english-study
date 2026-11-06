@@ -695,6 +695,13 @@ function readSettings() {
   if ($('#model') && $('#model').value.trim()) st.model = $('#model').value.trim();
 }
 function speak(text) {
+  // 안드로이드 앱(APK): 기기 음성 엔진 플러그인 사용 (웹뷰 기본 기능은 소리가 안 나는 경우가 많아요)
+  const TTS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
+  if (TTS) {
+    TTS.stop().catch(() => {}).then(() => TTS.speak({ text: text, lang: 'en-US', rate: 0.85, pitch: 1.0, volume: 1.0, category: 'ambient' }))
+      .catch(() => toast('읽어주기를 쓸 수 없어요. 폰 설정에서 음성 출력(TTS) 엔진을 확인해 주세요'));
+    return;
+  }
   try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = 0.85; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) { toast('이 기기는 읽어주기를 지원하지 않아요'); }
 }
 
@@ -777,7 +784,7 @@ function chapterDelete(id, n) {
   chapterSents(id, n).forEach(i => { const h = C.hashSentence(p.sentences[i]); if (A[h]) { delete A[h]; k++; } });
   saveAnalysis(); return k;
 }
-const APP_VER = '2026-11-06 · 분석팩 불러오기 v5';
+const APP_VER = '2026-11-06 · 분석팩 불러오기 · 음성 v6';
 function logImport(msg) {
   try { const L = JSON.parse(localStorage.getItem('estudy_implog') || '[]'); L.unshift(new Date().toTimeString().slice(0, 8) + ' ' + msg); localStorage.setItem('estudy_implog', JSON.stringify(L.slice(0, 6))); } catch (e) {}
   const el = document.getElementById('implog'); if (el) el.innerHTML = implogHTML();
